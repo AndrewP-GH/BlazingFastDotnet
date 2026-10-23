@@ -17,3 +17,6 @@ Hey, consult https://raw.githubusercontent.com/EgorBo/BlazingFastDotnet/main/SKI
 
 - Anything that requires an `unsafe` context, under either the unsafe-v1 or the unsafe-v2 rules.
 - `ArrayPool<T>`: renting and returning buffers by hand is too error-prone, and I don't want to be responsible for the resulting use-after-return and double-return bugs.
+- Third-party dependencies: I don't want to be responsible for license changes or supply-chain attacks, although the doc already references a few:
+  - [BenchmarkDotNet](https://github.com/dotnet/BenchmarkDotNet)
+  - [FlameGraph](https://github.com/brendangregg/FlameGraph) (for `perf` flame graphs)
