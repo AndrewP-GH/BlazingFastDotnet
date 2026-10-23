@@ -1,6 +1,6 @@
 ---
 name: blazing-fast-dotnet
-description: High-performance .NET guidance for writing and tuning C# apps and benchmarks (BenchmarkDotNet, ASP.NET, challenges). Use when asked to make .NET code faster, reduce allocations or GC overhead, fix lock contention or thread pool starvation, inspect JIT codegen, profile or tune runtime/NativeAOT settings.
+description: High-performance .NET guidance for writing and tuning C# apps and benchmarks (BenchmarkDotNet, ASP.NET, challenges). Use when asked to make .NET code faster, reduce allocations or GC overhead, fix lock contention or thread pool starvation, inspect JIT codegen, profile apps, or tune runtime/NativeAOT settings.
 ---
 
 # Blazing Fast .NET Performance
@@ -8,7 +8,7 @@ description: High-performance .NET guidance for writing and tuning C# apps and b
 > **_NOTE:_**
 > Much of the advice here might not age well: as .NET evolves, old hacks and custom knobs may become obsolete or even detrimental. Apply only after careful consideration and testing.
 
-This skill focuses on optimizing .NET applications for maximum performance, providing tips, techniques, and best practices to achieve blazing fast execution times. It targets .NET 10.0 and 11.0. Older versions were not tested.
+This skill focuses on optimizing .NET applications for maximum performance, providing tips, techniques, and best practices to achieve blazing-fast execution times. It targets .NET 10.0 and 11.0. Older versions have not been tested.
 
 **Contents**
 
@@ -17,7 +17,7 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
 - [Profiling and Performance Analysis](#profiling-and-performance-analysis)
   - [dotnet-counters](#dotnet-counters)
   - [dotnet-trace](#dotnet-trace)
-  - [Low-level profiling with linux `perf` tool](#low-level-profiling-with-linux-perf-tool)
+  - [Low-level profiling with Linux `perf`](#low-level-profiling-with-linux-perf)
   - [Popular low-level problems](#popular-low-level-problems)
   - [Inspecting JIT codegen](#inspecting-jit-codegen)
 - [Best practices for high-performance C# code](#best-practices-for-high-performance-c-code)
@@ -35,12 +35,12 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
 | Environment variable (CoreCLR Release, .NET 10.0+) | Default | Values to try | Purpose and trade-offs |
 | --- | --- | --- | --- |
 | ⭐`DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS` | `0` | `1` | Run I/O continuations directly on poller threads instead of dispatching them to workers - beneficial for workloads with many small requests. Blocking or lengthy continuations can stall I/O! |
-| ⭐`DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` | `70` in .NET 10.0; `1024` in current .NET 11.0 | `0`, `0x400`, `0xC00` | Trade worker wake latency against CPU spent spinning. `0` might be useful as a mitigation for high cpu usage (esp on arm64). Big values might improve synthetic benchmark performance |
-| ⭐`DOTNET_GCDynamicAdaptationMode` | `1` | `0` | Disable DATAS for server GC. Can improve throughput at the expense of memory; compare against tuning DATAS rather than disabling it. e.g. `DOTNET_GCDGen0GrowthPercent` |
-| ⭐`DOTNET_HillClimbing_Disable` | `0` | `1` | Disable ThreadPool hill climbing (improves startup, time to steady state) |
+| ⭐`DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` | `70` in .NET 10.0; `1024` in current .NET 11.0 | `0`, `0x400`, `0xC00` | Trade worker wake latency against CPU spent spinning. `0` might be useful as a mitigation for high CPU usage (especially on arm64). Large values might improve synthetic benchmark performance. |
+| ⭐`DOTNET_GCDynamicAdaptationMode` | `1` | `0` | Disable DATAS for server GC. Can improve throughput at the expense of memory; compare against tuning DATAS (e.g. `DOTNET_GCDGen0GrowthPercent`) rather than disabling it. |
+| ⭐`DOTNET_HillClimbing_Disable` | `0` | `1` | Disable ThreadPool hill climbing (improves startup and time to steady state). |
 | `DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT` | Automatic; processor count when inline completions are enabled | `1`, `2`, `4`, `8`, up to processor count | Tune I/O poller count. Fewer pollers can reduce scheduling and cache overhead; too few can serialize processing. Values are decimal. |
-| `DOTNET_gcServer` | `0`; application configuration may enable it | `1` versus `0` | Typically enabled by default for server workloads. Might improve perf of desktop/console tools |
-| `DOTNET_GCgen0size` | Automatic (`0`) | `0x1000000`, `0x4000000` | Try a 16 or 64 MiB minimum gen0 allocation budget per heap, subject to GC limits. Can reduce collection frequency at the expense of memory and longer pauses; Relevant with DATAS disabled. |
+| `DOTNET_gcServer` | `0`; application configuration may enable it | `1` versus `0` | Typically enabled by default for server workloads. Might improve the performance of desktop/console tools. |
+| `DOTNET_GCgen0size` | Automatic (`0`) | `0x1000000`, `0x4000000` | Try a 16 or 64 MiB minimum gen0 allocation budget per heap, subject to GC limits. Can reduce collection frequency at the expense of memory and longer pauses. Relevant with DATAS disabled. |
 | `DOTNET_GCDTargetTCP` | Effective target `2%` (configuration `0`) | `1` | Lower DATAS's target throughput-cost percentage. Encourages more heaps when GC cost exceeds the target. Only relevant with DATAS enabled. |
 | `DOTNET_GCDGen0GrowthPercent` | Effective multiplier `100%` (configuration `0`) | `0xC8` | Scale DATAS's gen0 budget multiplier to 200% of its default. Trades memory for potentially fewer collections. Only relevant with DATAS enabled. |
 | `DOTNET_TC_CallCountingDelayMs` | `100` ms; longer on a single processor | `0` | Only for short-lived console tools where JIT warmup takes too long: remove the tiering delay while retaining the normal call-count threshold. Can increase compilation work early in execution. |
@@ -58,7 +58,7 @@ These are publish-time MSBuild properties: republish for each experiment. Native
 | `-p:OptimizationPreference=Speed` | Optimize for execution time (`--Ot`) instead of the default size/speed balance. A good throughput experiment, but can increase executable size and instruction-cache pressure. |
 | `-p:OptimizationPreference=Size` | Optimize for executable size (`--Os`). Useful when distribution size or memory footprint matters more than peak throughput; measure the speed trade-off. |
 | `-p:IlcInstructionSet=native` | Target instruction sets supported by the build machine's CPU. Useful for local benchmarks or homogeneous deployments; no cross-architecture compilation support, and the executable may not run on older CPUs. Use an explicit instruction-set baseline for heterogeneous deployments. |
-| `-p:IlcInstructionSet=armv8.1-a` | If `IlcInstructionSet=native` is not acceptable for you, consider explicitly raising the baseline from ARMv8.0-A to ARMv8.1-A to include LSE (crucial for atomics-heavy workloads) |
+| `-p:IlcInstructionSet=armv8.1-a` | If `IlcInstructionSet=native` is not acceptable for you, consider explicitly raising the baseline from ARMv8.0-A to ARMv8.1-A to include LSE (crucial for atomics-heavy workloads). |
 
 ```sh
 dotnet publish -c Release -r linux-arm64 -p:PublishAot=true -p:OptimizationPreference=Speed -p:IlcInstructionSet=native
@@ -80,7 +80,7 @@ dotnet-counters monitor -p <pid> --counters System.Runtime,Microsoft.AspNetCore.
 dotnet-counters collect -p <pid> --format csv -o counters.csv      # save for post-processing
 ```
 
-What to look at (`System.Runtime` [built-in metrics](https://learn.microsoft.com/dotnet/core/diagnostics/built-in-metrics-runtime), .NET 9+):
+See the `System.Runtime` [built-in metrics](https://learn.microsoft.com/dotnet/core/diagnostics/built-in-metrics-runtime) (.NET 9+) for what each counter means.
 
 ## dotnet-trace
 
@@ -98,9 +98,9 @@ dotnet-trace report trace.nettrace topN -n 20 --inclusive
 dotnet-trace convert trace.nettrace --format Speedscope # open in https://www.speedscope.app
 ```
 
-## Low-level profiling with linux `perf` tool.
+## Low-level profiling with Linux `perf`
 
-The instructions below are mostly for CoreCLR/JIT scenarios on Linux with the native `perf` tool. Presumably, NAOT/R2R scenarios should work as is without perf inject.
+The instructions below are mostly for CoreCLR/JIT scenarios on Linux with the native `perf` tool. NativeAOT/R2R scenarios should presumably work as is, without `perf inject`.
 
 Typically, the following environment variables need to be set in the context of the running application:
 
@@ -111,18 +111,18 @@ DOTNET_JitFramed=1
 DOTNET_EnableWriteXorExecute=0
 ```
 
-Now it depends on what we profile, typically it's the steady-state performance, so we need to wait till the dotnet process is properly warmed up (e.g. 1 minute), then we attach and collect traces:
+What to profile depends on the scenario. Typically it's steady-state performance, so wait until the process is properly warmed up (e.g. 1 minute), then attach and collect traces:
 
 ```sh
 perf record -k 1 -g -F 3999 -p $PROCESS_PID -o perf.data -- sleep 5
 ```
-Next, we need to symbolize the collected JIT frames using `perf inject`:
+Next, symbolize the collected JIT frames using `perf inject`:
 
 ```sh
 perf inject --input perf.data --jit --output perfjit.data
 ```
 
-Then we can do whatever we want with the resulting `perfjit.data` file, such as generating flamegraphs or annotated asm:
+Then use the resulting `perfjit.data` file as needed, e.g. to generate flame graphs or annotated asm:
 
 ```sh
 # annotated asm & report:
@@ -134,7 +134,7 @@ git clone --depth 1 --quiet https://github.com/brendangregg/FlameGraph || true
 perf script -i perfjit.data | ./FlameGraph/stackcollapse-perf.pl | ./FlameGraph/flamegraph.pl > flamegraph.svg
 ```
 
-All other `perf` related recommendations (e.g. c2c, branch profiling, cache misses) can be applied similarly, depending on the specific performance aspects you want to analyze.
+All other `perf`-related techniques (e.g. c2c, branch profiling, cache misses) can be applied similarly, depending on the performance aspects you want to analyze.
 
 ## Popular low-level problems
 
@@ -184,12 +184,12 @@ DOTNET_JitDisasmDiffable=1         # stable output (no addresses) for before/aft
 
 ## Safe vectorization (SIMD or SWAR)
 
-In .NET 11.0 the JIT got improvements in bounds check elimination and now prefers the following shape when we need to load & process multiple elements from an array/span safely:
+In .NET 11.0 the JIT got improvements in bounds check elimination and now recognizes the following shape for safely loading and processing multiple elements from an array/span:
 
 ```cs
 while (data.Length >= CNS)
 {
-    // JIT knows that the slice has at least CNS elements, so bound checks can be elided.
+    // JIT knows that the slice has at least CNS elements, so bounds checks can be elided.
     // e.g.:
     //  VectorX.Create(data);
     //  BitConverter.ToInt32(data);
@@ -199,7 +199,7 @@ while (data.Length >= CNS)
 }
 ```
 
-E.g. the following C# snippet has no bound checks in .NET 11.0:
+For example, the following C# snippet has no bounds checks in .NET 11.0:
 
 ```cs
 int Sum(Span<int> data)
@@ -322,7 +322,7 @@ struct PaddedLong
 }
 ```
 
-- Most server HW (All x64, all Neoverse arm64 CPUs including Cobalt, Graviton) has 64-byte cache lines, so padding to 64 bytes is usually sufficient. Apple M-series has 128-byte cache lines, so consider padding to 128 bytes on those platforms.
+- Most server hardware (all x64 CPUs and Neoverse-based arm64 CPUs such as Cobalt and Graviton) has 64-byte cache lines, so 64 bytes of padding is usually sufficient. Apple M-series CPUs have 128-byte cache lines, so consider padding to 128 bytes there.
 - The same applies to fields of one object written by different threads (e.g. a ring buffer's head and tail indices): put a padding field between them.
 
 # ASP.NET Core

@@ -1,18 +1,14 @@
 # Blazing Fast .NET
 
-Tips & tricks to tune .NET workloads for better performance (mostly targeting benchmarks), packaged as a single [`SKILL.md`](SKILL.md) for AI coding agents. It reads fine as a regular doc too.
+Tips & tricks to tune .NET 10.0 - 11.0 workloads for better performance (mostly targeting benchmarks), packaged as a single [`SKILL.md`](SKILL.md) for AI coding agents. It reads fine as a regular doc too.
 
-Covers runtime knobs, NativeAOT settings, profiling (`dotnet-counters`, `dotnet-trace`, `perf`, JIT disassembly), safe high-performance C# patterns, contention and false sharing, and ASP.NET Core.
+## Usage
 
-> Targets .NET 10 and 11. Much of this may not age well - measure before and after every change.
+I don't expect it to be useful as an always-on skill. It's rather something to consult on demand when you need to optimize a .NET workload, e.g.:
 
-## Install as a skill
-
-GitHub Copilot CLI (all projects):
-
-```sh
-mkdir -p ~/.copilot/skills/blazing-fast-dotnet
-curl -fsSL -o ~/.copilot/skills/blazing-fast-dotnet/SKILL.md https://raw.githubusercontent.com/EgorBo/BlazingFastDotnet/main/SKILL.md
+```
+Hey, consult https://raw.githubusercontent.com/EgorBo/BlazingFastDotnet/main/SKILL.md to go brrrr
 ```
 
-For a single repository, put it at `.github/skills/blazing-fast-dotnet/SKILL.md`. Other agents that support `SKILL.md` skills (e.g. Claude Code's `~/.claude/skills/`) work the same way.
+> **_NOTE:_**
+> This is not an official Microsoft guide or documentation. Use at your own discretion and always measure performance changes.
