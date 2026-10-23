@@ -28,7 +28,10 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
     - [False sharing](#false-sharing)
 - [ASP.NET Core](#aspnet-core)
 
-# Knobs to Tune .NET Performance
+# Magic knobs to Tune .NET Performance
+
+> [!WARNING]
+> It is highly recommended to keep the default settings unless you have measured and understood the performance implications of changing them. 
 
 ⭐ - known to have a visible impact on performance (typically, in synthetic benchmarks).
 
@@ -133,6 +136,8 @@ git clone --depth 1 --quiet https://github.com/brendangregg/FlameGraph || true
 perf script -i perfjit.data | ./FlameGraph/stackcollapse-perf.pl | ./FlameGraph/flamegraph.pl > flamegraph.svg
 ```
 
+Now `perf.asm` contains the annotated assembly output for the hottest methods in your application. Keep in mind that sample attribution is imprecise ("skid"): the cost is often reported on an instruction shortly after the one that actually stalls (e.g. right after a slow load or division), so inspect the neighboring instructions too. 
+
 All other `perf`-related techniques (e.g. c2c, branch profiling, cache misses) can be applied similarly, depending on the performance aspects you want to analyze.
 
 ## Popular low-level problems
@@ -179,7 +184,7 @@ DOTNET_JitDisasmDiffable=1         # stable output (no addresses) for before/aft
 - Consider `FrozenDictionary` / `FrozenSet` for build-once, read-many data. Their construction cost must be amortized over enough lookups; preserve the intended comparer.
 - Use dictionary alternate lookups from spans: `dictionary.GetAlternateLookup<ReadOnlySpan<char>>()` avoids allocating temporary string keys when the comparer supports it. Use `TryGetAlternateLookup` when comparer support is not known.
 - Implement `IEquatable<T>` and a good `GetHashCode` for struct dictionary/set keys. This can avoid expensive default equality paths, boxing, and collision-heavy hashes.
-- Try [`TensorPrimitives`](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives) before hand-vectorizing numeric operations. Its span-based implementations handle SIMD and tails; floating-point reductions can round differently from sequential loops.
+- Try [`TensorPrimitives`](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives) before hand-vectorizing numeric operations. Its span-based implementations handle SIMD and tails; Prefer it over manual SIMD loops or LINQ for things like finding min/max, sums, etc..
 - Prefer [`[LibraryImport]`](https://learn.microsoft.com/dotnet/standard/native-interop/pinvoke-source-generation) over `[DllImport]` for supported signatures to generate marshalling at build time; already-blittable signatures may gain little. Preserve marshalling/calling-convention semantics; the generator requires `AllowUnsafeBlocks=true` for its generated implementation, not user-written unsafe code.
 - Use `static readonly` flags for genuinely immutable process-wide configuration. Optimized JIT code can fold their values and eliminate disabled branches.
 - Cache fields in locals in hot loops (`var items = _items;`). The JIT often can't do it for you: calls and stores through references may modify the field, and the memory model restricts hoisting reads. Locals also enable bounds check elimination for arrays/spans.
@@ -255,7 +260,7 @@ static bool Equal(ReadOnlySpan<ushort> a, ReadOnlySpan<ushort> b)
 > [!TIP]
 > This only illustrates the loop shape. For this exact task, just call `a.SequenceEqual(b)`.
 
-More info about vectorization and SIMD in .NET can be found in the official documentation: https://learn.microsoft.com/en-us/dotnet/standard/simd
+More info about vectorization and SIMD in .NET can be found in the official documentation: https://learn.microsoft.com/en-us/dotnet/standard/simd and consider using [TensorPrimitives](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives).
 
 ## Strings and globalization
 
