@@ -5,7 +5,7 @@ description: High-performance .NET guidance for writing and tuning C# apps and b
 
 # Blazing Fast .NET Performance
 
-> **_NOTE:_**
+> [!WARNING]
 > Much of the advice here might not age well: as .NET evolves, old hacks and custom knobs may become obsolete or even detrimental. Apply only after careful consideration and testing.
 
 This skill focuses on optimizing .NET applications for maximum performance, providing tips, techniques, and best practices to achieve blazing-fast execution times. It targets .NET 10.0 and 11.0. Older versions have not been tested.
@@ -51,7 +51,8 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
 
 Recommended reading: Microsoft's [Optimizing AOT deployments](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/optimizing) article, plus the runtime's [CPU instruction-set tuning guide](https://github.com/dotnet/runtime/blob/9da219572c1/src/coreclr/nativeaot/docs/optimizing.md). The latter describes implementation-specific options that can change between SDK versions.
 
-These are publish-time MSBuild properties: republish for each experiment. NativeAOT has no JIT or tiered compilation, so the CoreCLR JIT/tiering environment variables above do not apply.
+> [!NOTE]
+> These are publish-time MSBuild properties: republish for each experiment. NativeAOT has no JIT or tiered compilation, so the CoreCLR JIT/tiering environment variables above do not apply.
 
 | MSBuild setting | Purpose and trade-offs |
 | --- | --- |
@@ -145,7 +146,7 @@ All other `perf`-related techniques (e.g. c2c, branch profiling, cache misses) c
 
 ## Inspecting JIT codegen
 
-These are diagnostic switches (not tuning knobs) and work with the shipped Release runtime. Set them only for the app process, not for `dotnet run`, which would also dump the SDK's own methods:
+These are diagnostic switches (not tuning knobs) and work with the shipped Release runtime:
 
 ```sh
 DOTNET_JitDisasm="Test"            # method list: 'Test', 'Program:Test', '*Test*', 'Program:*' (space-separated)
@@ -154,13 +155,16 @@ DOTNET_JitStdOutFile=/tmp/jit.txt  # write JIT output to a file instead of stdou
 DOTNET_JitDisasmDiffable=1         # stable output (no addresses) for before/after diffs
 ```
 
+> [!TIP]
+> Set them only for the app process, not for `dotnet run`, which would also dump the SDK's own methods.
+
 - A method is compiled several times as it tiers up. Judge the last version: header `; Tier1 code` (or `; Tier1-OSR code` / `; FullOpts code`), ideally with `; optimized using Dynamic PGO`. `; Tier0 code` and `; Instrumented Tier0 code` are unoptimized.
 - BCL methods precompiled with ReadyToRun show up only once they get hot and are re-jitted at Tier1.
 - NativeAOT: pass the same options to ILC, e.g. `<IlcArg Include="--codegenopt:JitDisasm=Test" />` and `<IlcArg Include="--codegenopt:JitStdOutFile=jit.txt" />`.
 
 # Best practices for high-performance C# code
 
-> **_NOTE:_**
+> [!IMPORTANT]
 > Only safe C# code is considered in these best practices. Unsafe code is highly discouraged and not covered here.
 
 ## Quick tips
@@ -246,7 +250,10 @@ static bool Equal(ReadOnlySpan<ushort> a, ReadOnlySpan<ushort> b)
     return true;
 }
 ```
-^ has no bounds checks for the main loop in .NET 12.0 (Preview 1). It only illustrates the loop shape: for this exact task, call `a.SequenceEqual(b)`.
+^ has no bounds checks for the main loop in .NET 12.0 (Preview 1).
+
+> [!TIP]
+> This only illustrates the loop shape. For this exact task, just call `a.SequenceEqual(b)`.
 
 More info about vectorization and SIMD in .NET can be found in the official documentation: https://learn.microsoft.com/en-us/dotnet/standard/simd
 

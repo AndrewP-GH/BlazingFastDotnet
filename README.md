@@ -10,5 +10,5 @@ I don't expect it to be useful as an always-on skill. It's rather something to c
 Hey, consult https://raw.githubusercontent.com/EgorBo/BlazingFastDotnet/main/SKILL.md to go brrrr
 ```
 
-> **_NOTE:_**
+> [!NOTE]
 > This is not an official Microsoft guide or documentation. Use at your own discretion and always measure performance changes.
