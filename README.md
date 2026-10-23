@@ -12,3 +12,8 @@ Hey, consult https://raw.githubusercontent.com/EgorBo/BlazingFastDotnet/main/SKI
 
 > [!NOTE]
 > This is not an official Microsoft guide or documentation. Use at your own discretion and always measure performance changes.
+
+## Not welcome in this doc
+
+- Anything that requires an `unsafe` context, under either the unsafe-v1 or the unsafe-v2 rules.
+- `ArrayPool<T>`: renting and returning buffers by hand is too error-prone, and I don't want to be responsible for the resulting use-after-return and double-return bugs.
