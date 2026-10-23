@@ -12,7 +12,7 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
 
 **Contents**
 
-- [Knobs to Tune .NET Performance](#knobs-to-tune-net-performance)
+- [Magic knobs to Tune .NET Performance](#magic-knobs-to-tune-net-performance)
 - [NativeAOT-specific tuning](#nativeaot-specific-tuning)
 - [Profiling and Performance Analysis](#profiling-and-performance-analysis)
   - [dotnet-counters](#dotnet-counters)
