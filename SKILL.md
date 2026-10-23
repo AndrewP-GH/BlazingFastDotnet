@@ -6,7 +6,7 @@ description: High-performance .NET guidance for writing and tuning C# apps and b
 # Blazing Fast .NET Performance
 
 > [!WARNING]
-> Much of the advice here might not age well: as .NET evolves, old hacks and custom knobs may become obsolete or even detrimental. Apply only after careful consideration and testing.
+> Much of the advice here might not age well: as .NET evolves, old hacks and custom knobs may become obsolete or even detrimental. Apply only after careful consideration and testing. Revisit periodically to ensure continued relevance.
 
 This skill focuses on optimizing .NET applications for maximum performance, providing tips, techniques, and best practices to achieve blazing-fast execution times. It targets .NET 10.0 and 11.0. Older versions have not been tested.
 
@@ -34,17 +34,15 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
 
 | Environment variable (CoreCLR Release, .NET 10.0+) | Default | Values to try | Purpose and trade-offs |
 | --- | --- | --- | --- |
-| ⭐`DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS` | `0` | `1` | Run I/O continuations directly on poller threads instead of dispatching them to workers - beneficial for workloads with many small requests. Blocking or lengthy continuations can stall I/O! |
-| ⭐`DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` | `70` in .NET 10.0; `1024` in current .NET 11.0 | `0`, `0x400`, `0xC00` | Trade worker wake latency against CPU spent spinning. `0` might be useful as a mitigation for high CPU usage (especially on arm64). Large values might improve synthetic benchmark performance. |
+| ⭐`DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS` | `0` | `1` | Run I/O continuations directly on poller threads instead of dispatching them to workers - beneficial for workloads with many small requests. ⚠️ Blocking or lengthy continuations can stall I/O ⚠️ |
+| ⭐`DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` | `70` in .NET 10.0; `1024` in current .NET 11.0 | `0`, `0x400`, `0xC00` | Trade worker wake latency against CPU spent spinning. `0` might be useful as a mitigation for high CPU usage (especially on arm64) at the cost of throughput. Large values might improve synthetic benchmark performance. |
 | ⭐`DOTNET_GCDynamicAdaptationMode` | `1` | `0` | Disable DATAS for server GC. Can improve throughput at the expense of memory; compare against tuning DATAS (e.g. `DOTNET_GCDGen0GrowthPercent`) rather than disabling it. |
 | ⭐`DOTNET_HillClimbing_Disable` | `0` | `1` | Disable ThreadPool hill climbing (improves startup and time to steady state). |
 | `DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT` | Automatic; processor count when inline completions are enabled | `1`, `2`, `4`, `8`, up to processor count | Tune I/O poller count. Fewer pollers can reduce scheduling and cache overhead; too few can serialize processing. Values are decimal. |
-| `DOTNET_gcServer` | `0`; application configuration may enable it | `1` versus `0` | Typically enabled by default for server workloads. Might improve the performance of desktop/console tools. |
-| `DOTNET_GCgen0size` | Automatic (`0`) | `0x1000000`, `0x4000000` | Try a 16 or 64 MiB minimum gen0 allocation budget per heap, subject to GC limits. Can reduce collection frequency at the expense of memory and longer pauses. Relevant with DATAS disabled. |
+| `DOTNET_gcServer` | varies by environment | `1` | Typically enabled by default for server workloads. Might improve the performance of desktop/console tools. |
 | `DOTNET_GCDTargetTCP` | Effective target `2%` (configuration `0`) | `1` | Lower DATAS's target throughput-cost percentage. Encourages more heaps when GC cost exceeds the target. Only relevant with DATAS enabled. |
 | `DOTNET_GCDGen0GrowthPercent` | Effective multiplier `100%` (configuration `0`) | `0xC8` | Scale DATAS's gen0 budget multiplier to 200% of its default. Trades memory for potentially fewer collections. Only relevant with DATAS enabled. |
 | `DOTNET_TC_CallCountingDelayMs` | `100` ms; longer on a single processor | `0` | Only for short-lived console tools where JIT warmup takes too long: remove the tiering delay while retaining the normal call-count threshold. Can increase compilation work early in execution. |
-| `DOTNET_TC_AggressiveTiering` | `0` | `1` | Only for short-lived console tools where JIT warmup takes too long: promote after one call and remove the tiering delay. Already implies `TC_CallCountingDelayMs=0`; can reduce PGO profile quality. |
 | `DOTNET_TieredCompilation` | `1` | `0` | Alternative for short-lived console tools where JIT warmup takes too long: disable tiering and JIT optimized code on first use. Removes tiered warmup but disables dynamic PGO and can increase initial JIT cost. |
 
 # NativeAOT-specific tuning
@@ -143,6 +141,8 @@ All other `perf`-related techniques (e.g. c2c, branch profiling, cache misses) c
 - Bounds checks not being elided by the JIT.
 - Store-to-load forwarding stalls, e.g. writing a struct field by field and reading it back with a wider load.
 - Bad data locality causing cache misses.
+- Code alignment noise. Loop or branch placement, Intel JCC erratum - not something we can control, just to keep in mind when analyzing performance variations.
+- GC's alignment is 8 bytes (64-bit) which might not be suitable for SIMD optimizations (e.g. AVX512 might penalize every load/store if misaligned since the cache line is 64 bytes).
 
 ## Inspecting JIT codegen
 
