@@ -12,8 +12,6 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
 
 **Contents**
 
-- [Magic knobs to Tune .NET Performance](#magic-knobs-to-tune-net-performance)
-- [NativeAOT-specific tuning](#nativeaot-specific-tuning)
 - [Profiling and Performance Analysis](#profiling-and-performance-analysis)
   - [dotnet-counters](#dotnet-counters)
   - [dotnet-trace](#dotnet-trace)
@@ -22,49 +20,13 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
   - [Inspecting JIT codegen](#inspecting-jit-codegen)
 - [Best practices for high-performance C# code](#best-practices-for-high-performance-c-code)
   - [Quick tips](#quick-tips)
-  - [Safe vectorization (SIMD or SWAR)](#safe-vectorization-simd-or-swar)
   - [Strings and globalization](#strings-and-globalization)
   - [Contention on shared state](#contention-on-shared-state)
     - [False sharing](#false-sharing)
+  - [Safe vectorization (SIMD or SWAR)](#safe-vectorization-simd-or-swar)
 - [ASP.NET Core](#aspnet-core)
-
-# Magic knobs to Tune .NET Performance
-
-> [!WARNING]
-> It is highly recommended to keep the default settings unless you have measured and understood the performance implications of changing them. 
-
-⭐ - known to have a visible impact on performance (typically, in synthetic benchmarks).
-
-| Environment variable (CoreCLR Release, .NET 10.0+) | Default | Values to try | Purpose and trade-offs |
-| --- | --- | --- | --- |
-| ⭐`DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS` | `0` | `1` | Run I/O continuations directly on poller threads instead of dispatching them to workers - beneficial for workloads with many small requests. ⚠️ Blocking or lengthy continuations can stall I/O ⚠️ |
-| ⭐`DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` | `70` in .NET 10.0; `1024` in current .NET 11.0 | `0`, `0x400`, `0xC00` | Trade worker wake latency against CPU spent spinning. `0` might be useful as a mitigation for high CPU usage (especially on arm64) at the cost of throughput. Large values might improve synthetic benchmark performance. |
-| ⭐`DOTNET_GCDynamicAdaptationMode` | `1` | `0` | Disable DATAS for server GC. Can improve throughput at the expense of memory; compare against tuning DATAS (e.g. `DOTNET_GCDGen0GrowthPercent`) rather than disabling it. |
-| ⭐`DOTNET_HillClimbing_Disable` | `0` | `1` | Disable ThreadPool hill climbing (improves time to steady state). |
-| `DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT` | Automatic; processor count when inline completions are enabled | `1`, `2`, `4`, `8`, up to processor count | Tune I/O poller count. Fewer pollers can reduce scheduling and cache overhead; too few can serialize processing. Values are decimal. |
-| `DOTNET_gcServer` | varies by environment | `1` | Typically enabled by default for server workloads. Might improve the performance of desktop/console tools. |
-| `DOTNET_GCDTargetTCP` | Effective target `2%` (configuration `0`) | `1` | Lower DATAS's target throughput-cost percentage. Encourages more heaps when GC cost exceeds the target. Only relevant with DATAS enabled. |
-| `DOTNET_GCDGen0GrowthPercent` | Effective multiplier `100%` (configuration `0`) | `0xC8` | Scale DATAS's gen0 budget multiplier to 200% of its default. Trades memory for potentially fewer collections. Only relevant with DATAS enabled. |
-| `DOTNET_TC_CallCountingDelayMs` | `100` ms; longer on a single processor | `0` | Only for short-lived console tools where JIT warmup takes too long: remove the tiering delay while retaining the normal call-count threshold. Can increase compilation work early in execution. |
-| `DOTNET_TieredCompilation` | `1` | `0` | Alternative for short-lived console tools where JIT warmup takes too long: disable tiering and JIT optimized code on first use. Removes tiered warmup but disables dynamic PGO and can increase initial JIT cost. |
-
-# NativeAOT-specific tuning
-
-Recommended reading: Microsoft's [Optimizing AOT deployments](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/optimizing) article, plus the runtime's [CPU instruction-set tuning guide](https://github.com/dotnet/runtime/blob/9da219572c1/src/coreclr/nativeaot/docs/optimizing.md). The latter describes implementation-specific options that can change between SDK versions.
-
-> [!NOTE]
-> These are publish-time MSBuild properties: republish for each experiment. NativeAOT has no JIT or tiered compilation, so the CoreCLR JIT/tiering environment variables above do not apply.
-
-| MSBuild setting | Purpose and trade-offs |
-| --- | --- |
-| `-p:OptimizationPreference=Speed` | Optimize for execution time (`--Ot`) instead of the default size/speed balance. A good throughput experiment, but can increase executable size and instruction-cache pressure. |
-| `-p:OptimizationPreference=Size` | Optimize for executable size (`--Os`). Useful when distribution size or memory footprint matters more than peak throughput; measure the speed trade-off. |
-| `-p:IlcInstructionSet=native` | Target instruction sets supported by the build machine's CPU. Useful for local benchmarks or homogeneous deployments; no cross-architecture compilation support, and the executable may not run on older CPUs. Use an explicit instruction-set baseline for heterogeneous deployments. |
-| `-p:IlcInstructionSet=armv8.1-a` | If `IlcInstructionSet=native` is not acceptable for you, consider explicitly raising the baseline from ARMv8.0-A to ARMv8.1-A to include LSE (crucial for atomics-heavy workloads). |
-
-```sh
-dotnet publish -c Release -r linux-arm64 -p:PublishAot=true -p:OptimizationPreference=Speed -p:IlcInstructionSet=native
-```
+- [Magic knobs to Tune .NET Performance](#magic-knobs-to-tune-net-performance)
+- [NativeAOT-specific tuning](#nativeaot-specific-tuning)
 
 # Profiling and Performance Analysis
 
@@ -207,77 +169,6 @@ DOTNET_JitDisasmOnlyOptimized=1    # show only Tier-1/FullOpts code
 - Cache fields in locals in hot loops (`var items = _items;`). The JIT often can't do it for you: calls and stores through references may modify the field, and the memory model restricts hoisting reads. Locals also enable bounds check elimination for arrays/spans.
 - Consider `Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping` for UTF-8 JSON-only responses ([documentation](https://learn.microsoft.com/dotnet/standard/serialization/system-text-json/character-encoding#serialize-all-characters)). Never embed its raw output in HTML or `<script>`; any custom encoder disables STJ's generated serialization fast path, so benchmark rather than assuming the gains add up.
 
-## Safe vectorization (SIMD or SWAR)
-
-In .NET 11.0 the JIT got improvements in bounds check elimination and now recognizes the following shape for safely loading and processing multiple elements from an array/span:
-
-```cs
-while (data.Length >= CNS)
-{
-    // JIT knows that the slice has at least CNS elements, so bounds checks can be elided.
-    // e.g.:
-    //  VectorX.Create(data);
-    //  BitConverter.ToInt32(data);
-    //  BinaryPrimitives.ReadInt32LittleEndian(data);
-    //  etc.
-    data = data.Slice(CNS);
-}
-```
-
-For example, the following C# snippet has no bounds checks in .NET 11.0:
-
-```cs
-int Sum(Span<int> data)
-{
-    Vector128<int> sum = default;
-    while (data.Length >= Vector128<int>.Count)
-    {
-        sum += Vector128.Create(data);
-        data = data.Slice(Vector128<int>.Count);
-    }
-    int result = Vector128.Sum(sum);
-    foreach (var t in data)
-        result += t;
-    return result;
-}
-```
-
-.NET 12.0 (Preview 1) extends it to more complex loop shapes (e.g. multiple spans):
-
-```cs
-static bool Equal(ReadOnlySpan<ushort> a, ReadOnlySpan<ushort> b)
-{
-    if (a.Length != b.Length)
-        return false;
-
-    int i = 0;
-    if (Vector128.IsHardwareAccelerated)
-    {
-        for (; i <= a.Length - Vector128<ushort>.Count; i += Vector128<ushort>.Count)
-        {
-            var va = Vector128.Create(a.Slice(i));
-            var vb = Vector128.Create(b.Slice(i));
-            if (va != vb)
-                return false;
-        }
-    }
-
-    for (; i < a.Length; i++)
-    {
-        if (a[i] != b[i])
-            return false;
-    }
-
-    return true;
-}
-```
-^ has no bounds checks for the main loop in .NET 12.0 (Preview 1).
-
-> [!TIP]
-> This only illustrates the loop shape. For this exact task, just call `a.SequenceEqual(b)`.
-
-More info about vectorization and SIMD in .NET can be found in the official documentation: https://learn.microsoft.com/en-us/dotnet/standard/simd and consider using [TensorPrimitives](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives).
-
 ## Strings and globalization
 
 - Prefer ordinal operations. Culture-sensitive comparisons go through ICU, are many times slower than ordinal ones, and are often a correctness bug anyway.
@@ -353,6 +244,77 @@ struct PaddedLong
 - Most server hardware (all x64 CPUs and Neoverse-based arm64 CPUs such as Cobalt and Graviton) has 64-byte cache lines, so 64 bytes of padding is usually sufficient. Apple M-series CPUs have 128-byte cache lines, so consider padding to 128 bytes there.
 - The same applies to fields of one object written by different threads (e.g. a ring buffer's head and tail indices): put a padding field between them.
 
+## Safe vectorization (SIMD or SWAR)
+
+In .NET 11.0 the JIT got improvements in bounds check elimination and now recognizes the following shape for safely loading and processing multiple elements from an array/span:
+
+```cs
+while (data.Length >= CNS)
+{
+    // JIT knows that the slice has at least CNS elements, so bounds checks can be elided.
+    // e.g.:
+    //  VectorX.Create(data);
+    //  BitConverter.ToInt32(data);
+    //  BinaryPrimitives.ReadInt32LittleEndian(data);
+    //  etc.
+    data = data.Slice(CNS);
+}
+```
+
+For example, the following C# snippet has no bounds checks in .NET 11.0:
+
+```cs
+int Sum(Span<int> data)
+{
+    Vector128<int> sum = default;
+    while (data.Length >= Vector128<int>.Count)
+    {
+        sum += Vector128.Create(data);
+        data = data.Slice(Vector128<int>.Count);
+    }
+    int result = Vector128.Sum(sum);
+    foreach (var t in data)
+        result += t;
+    return result;
+}
+```
+
+.NET 12.0 (Preview 1 or main) extends it to more complex loop shapes (e.g. multiple spans):
+
+```cs
+static bool Equal(ReadOnlySpan<ushort> a, ReadOnlySpan<ushort> b)
+{
+    if (a.Length != b.Length)
+        return false;
+
+    int i = 0;
+    if (Vector128.IsHardwareAccelerated)
+    {
+        for (; i <= a.Length - Vector128<ushort>.Count; i += Vector128<ushort>.Count)
+        {
+            var va = Vector128.Create(a.Slice(i));
+            var vb = Vector128.Create(b.Slice(i));
+            if (va != vb)
+                return false;
+        }
+    }
+
+    for (; i < a.Length; i++)
+    {
+        if (a[i] != b[i])
+            return false;
+    }
+
+    return true;
+}
+```
+^ has no bounds checks for the main loop in .NET 12.0 (Preview 1).
+
+> [!TIP]
+> This only illustrates the loop shape. For this exact task, just call `a.SequenceEqual(b)`.
+
+More info about vectorization and SIMD in .NET can be found in the official documentation: https://learn.microsoft.com/en-us/dotnet/standard/simd and consider using [TensorPrimitives](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives).
+
 # ASP.NET Core
 
 Code-level advice for HTTP throughput benchmarks.
@@ -361,3 +323,40 @@ Code-level advice for HTTP throughput benchmarks.
 - Logging: without an `appsettings.json` that raises `Microsoft.AspNetCore` to `Warning`, the default level is `Information` and the host logs every request to the console - a massive bottleneck. Call `builder.Logging.ClearProviders()` or raise the level.
 - JSON: register source-generated metadata with `builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));`. For hand-written responses, serialize with a reused `Utf8JsonWriter` (`writer.Reset(response.BodyWriter)`) instead of allocating one per request.
 
+# Magic knobs to Tune .NET Performance
+
+> [!WARNING]
+> It is highly recommended to keep the default settings unless you have measured and understood the performance implications of changing them. 
+
+⭐ - known to have a visible impact on performance (typically, in synthetic benchmarks).
+
+| Environment variable (CoreCLR Release, .NET 10.0+) | Default | Values to try | Purpose and trade-offs |
+| --- | --- | --- | --- |
+| ⭐`DOTNET_SYSTEM_NET_SOCKETS_INLINE_COMPLETIONS` | `0` | `1` | Run I/O continuations directly on poller threads instead of dispatching them to workers - beneficial for workloads with many small requests. ⚠️ Blocking or lengthy continuations can stall I/O ⚠️ |
+| ⭐`DOTNET_ThreadPool_UnfairSemaphoreSpinLimit` | `70` in .NET 10.0; `1024` in current .NET 11.0 | `0`, `0x400`, `0xC00` | Trade worker wake latency against CPU spent spinning. `0` might be useful as a mitigation for high CPU usage (especially on arm64) at the cost of throughput. Large values might improve synthetic benchmark performance. |
+| ⭐`DOTNET_GCDynamicAdaptationMode` | `1` | `0` | Disable DATAS for server GC. Can improve throughput at the expense of memory; compare against tuning DATAS (e.g. `DOTNET_GCDGen0GrowthPercent`) rather than disabling it. |
+| ⭐`DOTNET_HillClimbing_Disable` | `0` | `1` | Disable ThreadPool hill climbing (improves time to steady state). |
+| `DOTNET_SYSTEM_NET_SOCKETS_THREAD_COUNT` | Automatic; processor count when inline completions are enabled | `1`, `2`, `4`, `8`, up to processor count | Tune I/O poller count. Fewer pollers can reduce scheduling and cache overhead; too few can serialize processing. Values are decimal. |
+| `DOTNET_gcServer` | varies by environment | `1` | Typically enabled by default for server workloads. Might improve the performance of desktop/console tools. |
+| `DOTNET_GCDTargetTCP` | Effective target `2%` (configuration `0`) | `1` | Lower DATAS's target throughput-cost percentage. Encourages more heaps when GC cost exceeds the target. Only relevant with DATAS enabled. |
+| `DOTNET_GCDGen0GrowthPercent` | Effective multiplier `100%` (configuration `0`) | `0xC8` | Scale DATAS's gen0 budget multiplier to 200% of its default. Trades memory for potentially fewer collections. Only relevant with DATAS enabled. |
+| `DOTNET_TC_CallCountingDelayMs` | `100` ms; longer on a single processor | `0` | Only for short-lived console tools where JIT warmup takes too long: remove the tiering delay while retaining the normal call-count threshold. Can increase compilation work early in execution. |
+| `DOTNET_TieredCompilation` | `1` | `0` | Alternative for short-lived console tools where JIT warmup takes too long: disable tiering and JIT optimized code on first use. Removes tiered warmup but disables dynamic PGO and can increase initial JIT cost. |
+
+# NativeAOT-specific tuning
+
+Recommended reading: Microsoft's [Optimizing AOT deployments](https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/optimizing) article, plus the runtime's [CPU instruction-set tuning guide](https://github.com/dotnet/runtime/blob/9da219572c1/src/coreclr/nativeaot/docs/optimizing.md). The latter describes implementation-specific options that can change between SDK versions.
+
+> [!NOTE]
+> These are publish-time MSBuild properties: republish for each experiment. NativeAOT has no JIT or tiered compilation, so the CoreCLR JIT/tiering environment variables above do not apply.
+
+| MSBuild setting | Purpose and trade-offs |
+| --- | --- |
+| `-p:OptimizationPreference=Speed` | Optimize for execution time (`--Ot`) instead of the default size/speed balance. A good throughput experiment, but can increase executable size and instruction-cache pressure. |
+| `-p:OptimizationPreference=Size` | Optimize for executable size (`--Os`). Useful when distribution size or memory footprint matters more than peak throughput; measure the speed trade-off. |
+| `-p:IlcInstructionSet=native` | Target instruction sets supported by the build machine's CPU. Useful for local benchmarks or homogeneous deployments; no cross-architecture compilation support, and the executable may not run on older CPUs. Use an explicit instruction-set baseline for heterogeneous deployments. |
+| `-p:IlcInstructionSet=armv8.1-a` | If `IlcInstructionSet=native` is not acceptable for you, consider explicitly raising the baseline from ARMv8.0-A to ARMv8.1-A to include LSE (crucial for atomics-heavy workloads). |
+
+```sh
+dotnet publish -c Release -r linux-arm64 -p:PublishAot=true -p:OptimizationPreference=Speed -p:IlcInstructionSet=native
+```
