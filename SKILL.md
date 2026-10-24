@@ -145,7 +145,12 @@ perf script -i perfjit.data | ./FlameGraph/stackcollapse-perf.pl | ./FlameGraph/
 
 Now `perf.asm` contains the annotated assembly output for the hottest methods in your application. Keep in mind that sample attribution is imprecise ("skid"): the cost is often reported on an instruction shortly after the one that actually stalls (e.g. right after a slow load or division), so inspect the neighboring instructions too.
 
-In case of missing symbols you may need to use `dotnet-symbol` to download the necessary debug symbols for .dll/.dylib/.so.
+In case of missing symbols you may need to use `dotnet-symbol` to download the necessary debug symbols for .dll/.dylib/.so:
+
+```sh
+dotnet-symbol --symbols $PUBLISH_FOLDER/*.dll
+dotnet-symbol --symbols $PUBLISH_FOLDER/*.so
+```
 
 All other `perf`-related techniques (e.g. c2c, branch profiling, cache misses) can be applied similarly, depending on the performance aspects you want to analyze.
 
@@ -167,7 +172,9 @@ DOTNET_JitDisasm="Test"            # method list: 'Test', 'Program:Test', '*Test
 DOTNET_JitDisasmSummary=1          # list every jitted method with its tier
 DOTNET_JitStdOutFile=/tmp/jit.txt  # write JIT output to a file instead of stdout
 DOTNET_JitDisasmDiffable=1         # stable output (no addresses) for before/after diffs
+DOTNET_JitDisasmOnlyOptimized=1    # show only Tier-1/FullOpts code
 ```
+^ might require `MethodImplOptions.NoInlining` on the method to ensure it gets JIT-compiled and not inlined away.
 
 > [!TIP]
 > Set them only for the app process, not for `dotnet run`, which would also dump the SDK's own methods.
@@ -187,6 +194,7 @@ DOTNET_JitDisasmDiffable=1         # stable output (no addresses) for before/aft
 - Use [`[LoggerMessage]`](https://learn.microsoft.com/dotnet/core/extensions/logging/source-generation) source-generated logging to avoid template parsing, boxing, and temporary allocations. Still guard expensive argument computation with `IsEnabled`.
 - Use [`[GeneratedRegex]`](https://learn.microsoft.com/dotnet/standard/base-types/regular-expression-source-generators) for compile-time-known patterns instead of runtime pattern compilation. Preserve options, culture, and match timeouts.
 - Prefer optimized bulk APIs over handwritten loops: `Span.CopyTo`, `Clear`, `Fill`, `SequenceEqual`, and `IndexOf` already have specialized implementations, including SIMD where appropriate.
+- Use RVA-backed spans `static ReadOnlySpan<T> RVA => new T[CNS]` for all kinds of immutable data (only primitives, e.g., `long`, `byte`, `char`) - it will be embedded into metadata and JIT will be able to perform various constant foldings on it.
 - Prefer static lambdas and state-passing overloads in hot paths to avoid capturing closures.
 - Parse and format UTF-8 directly: numeric `TryParse(ReadOnlySpan<byte>, ...)` and `TryFormat(Span<byte>, ...)` avoid intermediate strings and UTF-8/UTF-16 transcoding. Preserve culture and formatting semantics.
 - Cache `SearchValues<char>` / `SearchValues<byte>` for repeated searches against fixed sets; use `SearchValues<string>` for multi-substring searches. Construction has a cost, so do not create these per call.
