@@ -24,6 +24,7 @@ This skill focuses on optimizing .NET applications for maximum performance, prov
   - [Contention on shared state](#contention-on-shared-state)
     - [False sharing](#false-sharing)
   - [Safe vectorization (SIMD or SWAR)](#safe-vectorization-simd-or-swar)
+  - [Generic specialization via static abstract members](#generic-specialization-via-static-abstract-members)
 - [ASP.NET Core](#aspnet-core)
 - [Magic knobs to Tune .NET Performance](#magic-knobs-to-tune-net-performance)
 - [NativeAOT-specific tuning](#nativeaot-specific-tuning)
@@ -175,6 +176,7 @@ DOTNET_JitDisasmOnlyOptimized=1    # show only Tier-1/FullOpts code
 - Don't pin benchmarks to a single core - doing so might significantly affect internal VM heuristics (e.g. tiered compilation timing).
 - `AggressiveOptimization` is usually a deoptimization.
 - Overusing `AggressiveInlining` may hurt performance (e.g. by exhausting the inliner's time budget or increasing the number of tracked local variables).
+- Don't put too much data into TLS (Thread-Local Storage) - excessive use can lead to increased memory usage and cache pressure, reducing overall performance (there can be a lot of threads, each with its own copy).
 
 ## Strings and globalization
 
@@ -321,6 +323,41 @@ static bool Equal(ReadOnlySpan<ushort> a, ReadOnlySpan<ushort> b)
 > This only illustrates the loop shape. For this exact task, just call `a.SequenceEqual(b)`.
 
 More info about vectorization and SIMD in .NET can be found in the [official documentation](https://learn.microsoft.com/en-us/dotnet/standard/simd). Also consider using [TensorPrimitives](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives).
+
+## Generic specialization via static abstract members
+
+Static abstract interface members let you specialize a generic method for values supplied by struct tags, without duplicating its source code. The JIT generates separate native versions of `Big<C42>` and `Big<C100>`. In optimized code, it can inline the small `Value` getters and fold expressions and branches that use `T.Value`. This works even when `Big<T>` itself is too large to inline; The tradeoff is increased native code size. `T.Value` is not a C# compile-time constant: constant folding depends on JIT optimizations and getter inlining.
+
+```cs
+using System.Runtime.CompilerServices;
+
+interface IConstant {
+    static abstract int Value { get; }
+}
+
+readonly struct C42 : IConstant {
+    public static int Value => 42;
+}
+
+readonly struct C100 : IConstant {
+    public static int Value => 100;
+}
+
+static class Example
+{
+    static int Big<T>(int x) where T : struct, IConstant
+    {
+        int arg = T.Value;
+
+        // The large body would go here.
+
+        return arg == 42 ? x * arg : x + arg;
+    }
+
+    static int Use42(int x) => Big<C42>(x);
+    static int Use100(int x) => Big<C100>(x);
+}
+```
 
 # ASP.NET Core
 
