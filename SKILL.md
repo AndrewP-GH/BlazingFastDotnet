@@ -359,6 +359,71 @@ static class Example
 }
 ```
 
+It is also handy for scenarios where you want to leverage different vector sizes or constants in a generic way, allowing the JIT to generate optimized code for each specialization without duplicating the method's source code. Example: summing an array using different vector widths with static abstract members.
+
+```cs
+using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+
+int[] values = new int[1003];
+for (int i = 0; i < values.Length; i++) values[i] = i + 1;
+
+Console.WriteLine(Sum<Vector128<int>, Ops128>(values));
+Console.WriteLine(Sum<Vector256<int>, Ops256>(values));
+Console.WriteLine(Sum<Vector512<int>, Ops512>(values));
+
+[MethodImpl(MethodImplOptions.NoInlining)]
+static int Sum<V, TOps>(ReadOnlySpan<int> s)
+    where V : struct
+    where TOps : struct, IOps<V>
+{
+    V acc = default;
+    int count = TOps.Count;
+
+    while (s.Length >= count)
+    {
+        acc = TOps.Add(acc, TOps.Load(s));
+        s = s.Slice(count);
+    }
+
+    int sum = TOps.Sum(acc);
+    foreach (int x in s) sum = unchecked(sum + x);
+    return sum;
+}
+
+interface IOps<V> where V : struct
+{
+    static abstract int Count { get; }
+    static abstract V Load(ReadOnlySpan<int> s);
+    static abstract V Add(V a, V b);
+    static abstract int Sum(V v);
+}
+
+readonly struct Ops128 : IOps<Vector128<int>>
+{
+    public static int Count => Vector128<int>.Count;
+    public static Vector128<int> Load(ReadOnlySpan<int> s) => Vector128.Create(s);
+    public static Vector128<int> Add(Vector128<int> a, Vector128<int> b) => a + b;
+    public static int Sum(Vector128<int> v) => Vector128.Sum(v);
+}
+
+readonly struct Ops256 : IOps<Vector256<int>>
+{
+    public static int Count => Vector256<int>.Count;
+    public static Vector256<int> Load(ReadOnlySpan<int> s) => Vector256.Create(s);
+    public static Vector256<int> Add(Vector256<int> a, Vector256<int> b) => a + b;
+    public static int Sum(Vector256<int> v) => Vector256.Sum(v);
+}
+
+readonly struct Ops512 : IOps<Vector512<int>>
+{
+    public static int Count => Vector512<int>.Count;
+    public static Vector512<int> Load(ReadOnlySpan<int> s) => Vector512.Create(s);
+    public static Vector512<int> Add(Vector512<int> a, Vector512<int> b) => a + b;
+    public static int Sum(Vector512<int> v) => Vector512.Sum(v);
+}
+```
+
 # ASP.NET Core
 
 Code-level advice for HTTP throughput benchmarks.
