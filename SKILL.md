@@ -168,6 +168,8 @@ DOTNET_JitDisasmOnlyOptimized=1    # show only Tier-1/FullOpts code
 - Use `static readonly` flags for genuinely immutable process-wide configuration. Optimized JIT code can fold their values and eliminate disabled branches.
 - Cache fields in locals in hot loops (`var items = _items;`). The JIT often can't do it for you: calls and stores through references may modify the field, and the memory model restricts hoisting reads. Locals also enable bounds check elimination for arrays/spans.
 - Consider `Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping` for UTF-8 JSON-only responses ([documentation](https://learn.microsoft.com/dotnet/standard/serialization/system-text-json/character-encoding#serialize-all-characters)). Never embed its raw output in HTML or `<script>`; any custom encoder disables STJ's generated serialization fast path, so benchmark rather than assuming the gains add up.
+- For most bit/byte manipulations, prefer the built-in `BitOperations`, `BinaryPrimitives`, `BitConverter` or static numeric helpers such as `uint.Log2`, `uint.PopCount`, `uint.TrailingZeroCount`, etc.
+- Span/ReadOnlySpan have a lot of useful extension methods via `MemoryExtensions` such as `SequenceEqual`, `IndexOf`, `IndexOfAnyExcept`, `LastIndexOf`, `StartsWith`, `CommonPrefixLength`, and a lot more - prefer these apis over manual for-loops or vectorizations.
 
 ## Strings and globalization
 
