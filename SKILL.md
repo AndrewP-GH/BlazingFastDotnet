@@ -67,7 +67,7 @@ dotnet-trace report trace.nettrace topN -n 20 --inclusive
 dotnet-trace convert trace.nettrace --format Speedscope # open in https://www.speedscope.app
 ```
 
-For more tips on using `dotnet-trace`, refer to https://raw.githubusercontent.com/dotnet/skills/refs/heads/main/plugins/dotnet-diag/skills/dotnet-trace-collect/SKILL.md skill.
+For more tips on using `dotnet-trace`, refer to the [dotnet-trace collection skill](https://raw.githubusercontent.com/dotnet/skills/refs/heads/main/plugins/dotnet-diag/skills/dotnet-trace-collect/SKILL.md).
 
 ## Low-level profiling with Linux `perf`
 
@@ -123,7 +123,7 @@ All other `perf`-related techniques (e.g. c2c, branch profiling, cache misses) c
 - Store-to-load forwarding stalls, e.g. writing a struct field by field and reading it back with a wider load.
 - Bad data locality causing cache misses.
 - Code alignment noise. Loop or branch placement, Intel JCC erratum - not something we can control, just to keep in mind when analyzing performance variations.
-- GC's alignment is 8 bytes (64-bit) which might not be suitable for SIMD optimizations (e.g. AVX512 might penalize every load/store if misaligned since the cache line is 64 bytes).
+- GC's alignment is 8 bytes (64-bit), which might not be suitable for SIMD optimizations (e.g. AVX512 might penalize every load/store if misaligned since the cache line is 64 bytes).
 
 ## Inspecting JIT codegen
 
@@ -156,20 +156,20 @@ DOTNET_JitDisasmOnlyOptimized=1    # show only Tier-1/FullOpts code
 - Use [`[LoggerMessage]`](https://learn.microsoft.com/dotnet/core/extensions/logging/source-generation) source-generated logging to avoid template parsing, boxing, and temporary allocations. Still guard expensive argument computation with `IsEnabled`.
 - Use [`[GeneratedRegex]`](https://learn.microsoft.com/dotnet/standard/base-types/regular-expression-source-generators) for compile-time-known patterns instead of runtime pattern compilation. Preserve options, culture, and match timeouts.
 - Prefer optimized bulk APIs over handwritten loops: `Span.CopyTo`, `Clear`, `Fill`, `SequenceEqual`, and `IndexOf` already have specialized implementations, including SIMD where appropriate.
-- Use RVA-backed spans `static ReadOnlySpan<T> RVA => new T[CNS]` for all kinds of immutable data (only primitives, e.g., `long`, `byte`, `char`) - it will be embedded into metadata and JIT will be able to perform various constant foldings on it.
+- Use RVA-backed spans `static ReadOnlySpan<T> RVA => new T[CNS]` for all kinds of immutable data (only primitives, e.g., `long`, `byte`, `char`) - the data will be embedded into metadata, and the JIT will be able to perform constant folding on it.
 - Prefer static lambdas and state-passing overloads in hot paths to avoid capturing closures.
 - Parse and format UTF-8 directly: numeric `TryParse(ReadOnlySpan<byte>, ...)` and `TryFormat(Span<byte>, ...)` avoid intermediate strings and UTF-8/UTF-16 transcoding. Preserve culture and formatting semantics.
 - Cache `SearchValues<char>` / `SearchValues<byte>` for repeated searches against fixed sets; use `SearchValues<string>` for multi-substring searches. Construction has a cost, so do not create these per call.
 - Consider `FrozenDictionary` / `FrozenSet` for build-once, read-many data. Their construction cost must be amortized over enough lookups; preserve the intended comparer.
 - Use dictionary alternate lookups from spans: `dictionary.GetAlternateLookup<ReadOnlySpan<char>>()` avoids allocating temporary string keys when the comparer supports it. Use `TryGetAlternateLookup` when comparer support is not known.
 - Implement `IEquatable<T>` and a good `GetHashCode` for struct dictionary/set keys. This can avoid expensive default equality paths, boxing, and collision-heavy hashes.
-- Try [`TensorPrimitives`](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives) before hand-vectorizing numeric operations. Its span-based implementations handle SIMD and tails; Prefer it over manual SIMD loops or LINQ for things like finding min/max, sums, etc..
-- Prefer [`[LibraryImport]`](https://learn.microsoft.com/dotnet/standard/native-interop/pinvoke-source-generation) over `[DllImport]` for supported signatures to generate marshalling at build time; Both `DllImport` and `LibraryImport` require `AllowUnsafeBlocks=true` under unsafe-v2, but if interop is not avoidable, `LibraryImport` is generally preferred.
+- Try [`TensorPrimitives`](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives) before hand-vectorizing numeric operations. Its span-based implementations handle SIMD and tails; prefer it over manual SIMD loops or LINQ for things like finding min/max, sums, etc.
+- Prefer [`[LibraryImport]`](https://learn.microsoft.com/dotnet/standard/native-interop/pinvoke-source-generation) over `[DllImport]` for supported signatures to generate marshalling at build time; both `DllImport` and `LibraryImport` require `AllowUnsafeBlocks=true` under unsafe-v2, but if interop is not avoidable, `LibraryImport` is generally preferred.
 - Use `static readonly` flags for genuinely immutable process-wide configuration. Optimized JIT code can fold their values and eliminate disabled branches.
 - Cache fields in locals in hot loops (`var items = _items;`). The JIT often can't do it for you: calls and stores through references may modify the field, and the memory model restricts hoisting reads. Locals also enable bounds check elimination for arrays/spans.
 - Consider `Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping` for UTF-8 JSON-only responses ([documentation](https://learn.microsoft.com/dotnet/standard/serialization/system-text-json/character-encoding#serialize-all-characters)). Never embed its raw output in HTML or `<script>`; any custom encoder disables STJ's generated serialization fast path, so benchmark rather than assuming the gains add up.
 - For most bit/byte manipulations, prefer the built-in `BitOperations`, `BinaryPrimitives`, `BitConverter` or static numeric helpers such as `uint.Log2`, `uint.PopCount`, `uint.TrailingZeroCount`, etc.
-- Span/ReadOnlySpan have a lot of useful extension methods via `MemoryExtensions` such as `SequenceEqual`, `IndexOf`, `IndexOfAnyExcept`, `LastIndexOf`, `StartsWith`, `CommonPrefixLength`, and a lot more - prefer these apis over manual for-loops or vectorizations.
+- Span/ReadOnlySpan have a lot of useful extension methods via `MemoryExtensions` such as `SequenceEqual`, `IndexOf`, `IndexOfAnyExcept`, `LastIndexOf`, `StartsWith`, `CommonPrefixLength`, and a lot more - prefer these APIs over manual loops or vectorization.
 
 ## Strings and globalization
 
@@ -315,13 +315,13 @@ static bool Equal(ReadOnlySpan<ushort> a, ReadOnlySpan<ushort> b)
 > [!TIP]
 > This only illustrates the loop shape. For this exact task, just call `a.SequenceEqual(b)`.
 
-More info about vectorization and SIMD in .NET can be found in the official documentation: https://learn.microsoft.com/en-us/dotnet/standard/simd and consider using [TensorPrimitives](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives).
+More info about vectorization and SIMD in .NET can be found in the [official documentation](https://learn.microsoft.com/en-us/dotnet/standard/simd). Also consider using [TensorPrimitives](https://learn.microsoft.com/dotnet/api/system.numerics.tensors.tensorprimitives).
 
 # ASP.NET Core
 
 Code-level advice for HTTP throughput benchmarks.
 
-- Start from `WebApplication.CreateSlimBuilder(args)` (or `CreateEmptyBuilder` + `builder.WebHost.UseKestrelCore()`) and add only what's needed. Every middleware (HTTPS redirection, auth, CORS, response compression, static files, developer exception page) costs something per request.
+- Start from `WebApplication.CreateSlimBuilder(args)` (or `CreateEmptyBuilder` + `builder.WebHost.UseKestrelCore()`) and add only what's needed. Every middleware component (HTTPS redirection, auth, CORS, response compression, static files, developer exception page) costs something per request.
 - Logging: without an `appsettings.json` that raises `Microsoft.AspNetCore` to `Warning`, the default level is `Information` and the host logs every request to the console - a massive bottleneck. Call `builder.Logging.ClearProviders()` or raise the level.
 - JSON: register source-generated metadata with `builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));`. For hand-written responses, serialize with a reused `Utf8JsonWriter` (`writer.Reset(response.BodyWriter)`) instead of allocating one per request.
 
