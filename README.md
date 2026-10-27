@@ -26,7 +26,8 @@ Do not attempt to make minimal reproductions or fixes. Focus on identifying pote
 Report two groups: 1) correctness issues, 2) anti-patterns
 ```
 
-You might be surprised by how many issues can be found even in well-established libraries.
+The link points to a raw Markdown version of [this article](https://learn.microsoft.com/en-us/dotnet/standard/unsafe-code/best-practices).
+The `Do not attempt to make minimal reproductions` instruction is intended to prevent the model from creating a repro and triggering cybersecurity safeguards.
 
 ## Not welcome in this doc
 
